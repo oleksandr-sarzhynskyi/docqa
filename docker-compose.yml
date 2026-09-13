@@ -1,0 +1,90 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: docqa-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: docqa
+      POSTGRES_PASSWORD: docqa
+      POSTGRES_DB: docqa
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docqa"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    container_name: docqa-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: docqa-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app/backend
+      - ./shared:/app/shared
+      - uploads:/app/uploads
+    working_dir: /app/backend
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    container_name: docqa-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./worker:/app/worker
+      - ./shared:/app/shared
+      - uploads:/app/uploads
+    working_dir: /app/worker
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A celery_app worker --loglevel=info
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: docqa-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    command: npm run dev -- --host 0.0.0.0
+
+volumes:
+  pgdata:
+  uploads:

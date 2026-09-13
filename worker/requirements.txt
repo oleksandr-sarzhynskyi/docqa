@@ -1,0 +1,8 @@
+celery
+redis
+sqlalchemy
+psycopg[binary]
+pdfplumber
+google-auth
+google-genai
+pgvector
